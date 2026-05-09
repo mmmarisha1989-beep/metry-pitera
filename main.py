@@ -1,8 +1,9 @@
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify
 import requests
 from flask_cors import CORS
 import base64
 import json
+import os
 
 app = Flask(__name__)
 CORS(app)
@@ -15,18 +16,14 @@ def publish():
     data = request.get_json(force=True, silent=True)
     if not data:
         return jsonify({"error": "invalid json"}), 400
-
     token = data.get("token", "").strip()
     text = data.get("text", "").strip()
     btn_text = data.get("btn_text", "Написать нам")
     image_b64 = data.get("image")
     image_type = data.get("image_type", "image/jpeg")
-
     if not token or not text:
         return jsonify({"error": "missing token or text"}), 400
-
     attachments = []
-
     if image_b64:
         try:
             image_bytes = base64.b64decode(image_b64)
@@ -45,25 +42,18 @@ def publish():
                     break
         except Exception as e:
             print(f"Image error: {e}")
-
     attachments.append({
         "type": "inline_keyboard",
         "payload": {"buttons": [[{"text": "👉 " + btn_text, "url": "https://t.me/MetryPiteraBot"}]]}
     })
-
     payload = {"text": text, "attachments": attachments}
     body_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-
     res = requests.post(
         f"{API_BASE}/messages?chat_id={CHAT_ID}",
         data=body_bytes,
-        headers={
-            "Authorization": token,
-            "Content-Type": "application/json; charset=utf-8"
-        },
+        headers={"Authorization": token, "Content-Type": "application/json; charset=utf-8"},
         timeout=15
     )
-
     print(f"MAX: {res.status_code} {res.text}")
     try:
         return jsonify(res.json()), res.status_code
@@ -79,5 +69,4 @@ def index():
     return "OK v3", 200
 
 if __name__ == "__main__":
-    import os
-    app.run(host="0.0.0.0
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
