@@ -8,8 +8,7 @@ app = Flask(__name__)
 CORS(app)
 
 CHAT_ID = -74435268265279
-API_URL = f"https://platform-api.max.ru/messages?chat_id={CHAT_ID}"
-UPLOAD_URL = "https://platform-api.max.ru/uploads"
+API_BASE = "https://platform-api.max.ru"
 
 @app.route("/publish", methods=["POST"])
 def publish():
@@ -24,45 +23,92 @@ def publish():
     image_type = data.get("image_type", "image/jpeg")
 
     if not token or not text:
-        return jsonify({"error": f"missing fields"}), 400
+        return jsonify({"error": "missing token or text"}), 400
 
-    headers = {
+    # Заголовки — Content-Type БЕЗ charset здесь, charset идёт в теле через encode
+    auth_headers = {
         "Authorization": token,
-        "Content-Type": "application/json; charset=utf-8"
+        "Content-Type": "application/json"
     }
 
     attachments = []
 
+    # Загрузка фото если есть
     if image_b64:
         try:
             image_bytes = base64.b64decode(image_b64)
             upload_res = requests.post(
-                UPLOAD_URL + "?type=photo",
-                headers={"Authorization": token, "Content-Type": image_type},
-                data=image_bytes
+                f"{API_BASE}/uploads?type=photo",
+                headers={
+                    "Authorization": token,
+                    "Content-Type": image_type
+                },
+                data=image_bytes,
+                timeout=15
             )
+            print(f"Upload status: {upload_res.status_code}, body: {upload_res.text}")
             if upload_res.status_code == 200:
                 photos = upload_res.json().get("photos", {})
                 for key, val in photos.items():
-                    attachments.append({"type": "image", "payload": {"token": val.get("token")}})
+                    photo_token = val.get("token")
+                    if photo_token:
+                        attachments.append({
+                            "type": "image",
+                            "payload": {"token": photo_token}
+                        })
                     break
         except Exception as e:
-            print(f"Image error: {e}")
+            print(f"Image upload error: {e}")
 
+    # Кнопка
     attachments.append({
         "type": "inline_keyboard",
-        "payload": {"buttons": [[{"text": "\U0001f449 " + btn_text, "url": "https://t.me/MetryPiteraBot"}]]}
+        "payload": {
+            "buttons": [[{
+                "text": "👉 " + btn_text,
+                "url": "https://t.me/MetryPiteraBot"
+            }]]
+        }
     })
 
+    # КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ:
+    # Сериализуем вручную с ensure_ascii=False
+    # Передаём как bytes через data= (НЕ json=)
+    # Content-Type явно указываем с charset
     payload = {"text": text, "attachments": attachments}
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    body_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
-    res = requests.post(API_URL, data=body, headers=headers)
-    return jsonify(res.json()), res.status_code
+    send_headers = {
+        "Authorization": token,
+        "Content-Type": "application/json; charset=utf-8"
+    }
+
+    res = requests.post(
+        f"{API_BASE}/messages?chat_id={CHAT_ID}",
+        data=body_bytes,
+        headers=send_headers,
+        timeout=15
+    )
+
+    print(f"MAX API status: {res.status_code}, response: {res.text}")
+    
+    try:
+        return jsonify(res.json()), res.status_code
+    except Exception:
+        return jsonify({"raw": res.text}), res.status_code
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok", "version": "2.0"}), 200
+
 
 @app.route("/")
 def index():
-    return "OK"
+    return "MAX Proxy Server v2.0 — OK", 200
+
 
 if __name__ == "__main__":
-    app.run()
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
