@@ -12,21 +12,21 @@ UPLOAD_URL = "https://platform-api.max.ru/uploads"
 
 @app.route("/publish", methods=["POST"])
 def publish():
-    data = request.json
-    token = data.get("token")
-    text = data.get("text")
+    # Парсим JSON любым способом
+    data = request.get_json(force=True, silent=True)
+    if not data:
+        return jsonify({"error": "invalid json"}), 400
+
+    token = data.get("token", "").strip()
+    text = data.get("text", "").strip()
     btn_text = data.get("btn_text", "Написать нам")
     image_b64 = data.get("image")
     image_type = data.get("image_type", "image/jpeg")
 
     if not token or not text:
-        return jsonify({"error": "token and text required"}), 400
+        return jsonify({"error": f"missing: token={bool(token)} text={bool(text)}"}), 400
 
-    headers = {
-        "Authorization": token,
-        "Content-Type": "application/json"
-    }
-
+    headers = {"Authorization": token, "Content-Type": "application/json"}
     attachments = []
 
     if image_b64:
@@ -38,29 +38,19 @@ def publish():
                 data=image_bytes
             )
             if upload_res.status_code == 200:
-                upload_data = upload_res.json()
-                photos = upload_data.get("photos", {})
+                photos = upload_res.json().get("photos", {})
                 for key, val in photos.items():
-                    attachments.append({
-                        "type": "image",
-                        "payload": {"token": val.get("token")}
-                    })
+                    attachments.append({"type": "image", "payload": {"token": val.get("token")}})
                     break
         except Exception as e:
-            print(f"Image upload error: {e}")
+            print(f"Image error: {e}")
 
     attachments.append({
         "type": "inline_keyboard",
-        "payload": {
-            "buttons": [[{
-                "text": "👉 " + btn_text,
-                "url": "https://t.me/MetryPiteraBot"
-            }]]
-        }
+        "payload": {"buttons": [[{"text": "👉 " + btn_text, "url": "https://t.me/MetryPiteraBot"}]]}
     })
 
-    payload = {"text": text, "attachments": attachments}
-    res = requests.post(API_URL, json=payload, headers=headers)
+    res = requests.post(API_URL, json={"text": text, "attachments": attachments}, headers=headers)
     return jsonify(res.json()), res.status_code
 
 @app.route("/")
