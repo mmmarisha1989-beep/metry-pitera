@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import requests
 from flask_cors import CORS
 import base64
+import json
 
 app = Flask(__name__)
 CORS(app)
@@ -12,7 +13,6 @@ UPLOAD_URL = "https://platform-api.max.ru/uploads"
 
 @app.route("/publish", methods=["POST"])
 def publish():
-    # Парсим JSON любым способом
     data = request.get_json(force=True, silent=True)
     if not data:
         return jsonify({"error": "invalid json"}), 400
@@ -24,9 +24,13 @@ def publish():
     image_type = data.get("image_type", "image/jpeg")
 
     if not token or not text:
-        return jsonify({"error": f"missing: token={bool(token)} text={bool(text)}"}), 400
+        return jsonify({"error": f"missing fields"}), 400
 
-    headers = {"Authorization": token, "Content-Type": "application/json"}
+    headers = {
+        "Authorization": token,
+        "Content-Type": "application/json; charset=utf-8"
+    }
+
     attachments = []
 
     if image_b64:
@@ -47,10 +51,13 @@ def publish():
 
     attachments.append({
         "type": "inline_keyboard",
-        "payload": {"buttons": [[{"text": "👉 " + btn_text, "url": "https://t.me/MetryPiteraBot"}]]}
+        "payload": {"buttons": [[{"text": "\U0001f449 " + btn_text, "url": "https://t.me/MetryPiteraBot"}]]}
     })
 
-    res = requests.post(API_URL, json={"text": text, "attachments": attachments}, headers=headers)
+    payload = {"text": text, "attachments": attachments}
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+    res = requests.post(API_URL, data=body, headers=headers)
     return jsonify(res.json()), res.status_code
 
 @app.route("/")
